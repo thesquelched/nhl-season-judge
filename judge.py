@@ -1,27 +1,32 @@
+######################################################################
+# NOTE: Compare to normal 82 game season, minus interconference games
+######################################################################
+
+from cache import UrlCache
+
 import requests
 import operator
 import re
 from pyquery import PyQuery
 from collections import defaultdict
 
+# nhl.com urls
 SCHEDULE_URL = 'http://www.nhl.com/ice/schedulebyseason.htm?season=20122013&gameType=2&team=&network=&venue='
-STANDINGS_URL = 'http://www.nhl.com/ice/standings.htm?season=20112012&type=CON#?navid=nav-stn-main'
+STANDINGS_URL = 'http://www.nhl.com/ice/standings.htm?season=20112012&type=DIV'
 
+# Constants
+POINTS_IN_FULL_SEASON = 164.0
 
-def pull(url):
+def url_read(url):
   """Grab HTML content from the url"""
 
-  resp = requests.get(url)
-
-  if resp.ok:
-    return resp.content
-  else:
-    return None
+  urlc = UrlCache(url)
+  return urlc.read()
 
 def find_games():
   """Return a list of (home team, visiting team) pairs for the 2012-2013 season"""
 
-  doc = PyQuery(pull(SCHEDULE_URL))
+  doc = PyQuery(url_read(SCHEDULE_URL))
   rows = doc('.schedTbl tbody tr').items()
 
   games = []
@@ -30,26 +35,37 @@ def find_games():
 
   return games
 
+def extract_standings(conf):
+  points_pct = dict()
+
+  for division in conf:
+    for row in division('tbody tr').items():
+      columns = list(row('td').items())
+      if len(columns) < 8: continue
+      team, points = columns[1].text(), int(columns[6].text())
+
+      # Remove prefixes for the top 8 teams in each conference (e.g. clinched
+      # division)
+      team = re.sub(r'[a-z] - ', '', team)
+
+      points_pct[team] = points / POINTS_IN_FULL_SEASON
+
+  return points_pct
+
 def find_standings():
   """Return a dict of NHL teams and their respective points percentages"""
 
   points_pct = dict()
-  POSSIBLE_POINTS = 164.0
 
-  doc = PyQuery(pull(STANDINGS_URL))
+  doc = PyQuery(url_read(STANDINGS_URL))
 
-  for row in doc('.Conference tbody tr').items():
-    columns = list(row('td').items())
-    if len(columns) < 8: continue
-    team, points = columns[1].text(), int(columns[7].text())
+  divisions = list(doc('.Division').items())
+  conferences = (divisions[:3], divisions[3:])
+  east, west = map(extract_standings, conferences)
 
-    # Remove prefixes for the top 8 teams in each conference (e.g. clinched
-    # division)
-    team = re.sub(r'[a-z] - ', '', team)
+  points_pct = dict(list(east.items()) + list(west.items()))
 
-    points_pct[team] = points / POSSIBLE_POINTS
-
-  return points_pct
+  return points_pct, east.keys(), west.keys()
 
 def extract_schedules(games):
   """Given the output of find_games, return a dict of team-schedule pairs"""
@@ -72,7 +88,7 @@ def determine_difficulty():
   """Return a dict of team-difficulty pairs"""
 
   schedules = extract_schedules(find_games())
-  points_pct = find_standings()
+  points_pct, east, west = find_standings()
 
   return {team: difficulty(schedule, points_pct) for team, schedule in schedules.items()}
 
