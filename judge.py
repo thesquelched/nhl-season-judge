@@ -107,7 +107,22 @@ def full_home_schedule(team, divisions):
 
   return list(div_sched) + list(conf_sched)
 
-def determine_difficulty():
+def conf_difficulties(standings_tables, all_games_2013, points_pct):
+  divisions = separate_divisions(standings_tables)
+  conference = set.union(*divisions)
+
+  games_2012 = list(chain.from_iterable(full_home_schedule(t, divisions) for t in conference))
+  scheds_2012 = extract_schedules(games_2012)
+
+  games_2013 = [g for g in all_games_2013 if g[0] in conference]
+  scheds_2013 = extract_schedules(games_2013)
+
+  diff_2013 = {team: difficulty(schedule, points_pct) for team, schedule in scheds_2013.items()}
+  diff_2012 = {team: difficulty(schedule, points_pct) for team, schedule in scheds_2012.items()}
+
+  return {t: diff_2013[t] - diff_2012[t] for t in conference}
+
+def schedule_difficulties():
   """Return a dict of team-difficulty pairs"""
 
   doc = PyQuery(url_read(STANDINGS_URL))
@@ -124,13 +139,25 @@ def determine_difficulty():
   east_scheds_2012 = extract_schedules(east_games_2012)
   west_scheds_2012 = extract_schedules(west_games_2012)
 
-  points_pct = find_standings(east_t, west_t)
+
+  all_games_2013 = find_games()
+  east_games_2013 = [g for g in all_games_2013 if g[0] in east]
+  west_games_2013 = [g for g in all_games_2013 if g[0] in west]
+
+  east_scheds_2013 = extract_schedules(east_games_2013)
+  west_scheds_2013 = extract_schedules(west_games_2013)
+
   scheds_2013 = extract_schedules(find_games())
 
-  return {team: difficulty(schedule, points_pct) for team, schedule in scheds_2013.items()}
+  points_pct = find_standings(east_t, west_t)
+
+  print(conf_difficulties(east_t, all_games_2013, points_pct))
+
+  #return {team: difficulty(schedule, points_pct) for team, schedule in scheds_2013.items()}
+  return {team: difficulty(schedule, points_pct) for team, schedule in east_scheds_2013.items()}
 
 if __name__ == '__main__':
-  team_diffs = determine_difficulty()
+  team_diffs = schedule_difficulties()
 
   header = """\
 2012-2013 NHL Schedule Difficulty by Team (easiest to hardest)
