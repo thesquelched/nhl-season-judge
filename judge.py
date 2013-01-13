@@ -120,7 +120,7 @@ def conf_difficulties(standings_tables, all_games_2013, points_pct):
   diff_2013 = {team: difficulty(schedule, points_pct) for team, schedule in scheds_2013.items()}
   diff_2012 = {team: difficulty(schedule, points_pct) for team, schedule in scheds_2012.items()}
 
-  return {t: diff_2013[t] - diff_2012[t] for t in conference}
+  return {t: (diff_2013[t] - diff_2012[t])/diff_2012[t] for t in conference}
 
 def schedule_difficulties():
   """Return a dict of team-difficulty pairs"""
@@ -128,36 +128,21 @@ def schedule_difficulties():
   doc = PyQuery(url_read(STANDINGS_URL))
 
   div_tables = list(doc('.Division').items())
+
   east_t, west_t = (div_tables[:3], div_tables[3:])
-
-  east_divs, west_divs = map(separate_divisions, (east_t, west_t))
-  east, west = tuple(set.union(*d) for d in (east_divs, west_divs))
-
-  east_games_2012 = list(chain.from_iterable(full_home_schedule(t, east_divs) for t in east))
-  west_games_2012 = list(chain.from_iterable(full_home_schedule(t, west_divs) for t in west))
-
-  east_scheds_2012 = extract_schedules(east_games_2012)
-  west_scheds_2012 = extract_schedules(west_games_2012)
-
-
-  all_games_2013 = find_games()
-  east_games_2013 = [g for g in all_games_2013 if g[0] in east]
-  west_games_2013 = [g for g in all_games_2013 if g[0] in west]
-
-  east_scheds_2013 = extract_schedules(east_games_2013)
-  west_scheds_2013 = extract_schedules(west_games_2013)
-
-  scheds_2013 = extract_schedules(find_games())
-
   points_pct = find_standings(east_t, west_t)
 
-  print(conf_difficulties(east_t, all_games_2013, points_pct))
+  all_games_2013 = find_games()
 
-  #return {team: difficulty(schedule, points_pct) for team, schedule in scheds_2013.items()}
-  return {team: difficulty(schedule, points_pct) for team, schedule in east_scheds_2013.items()}
+  return (conf_difficulties(east_t, all_games_2013, points_pct),
+          conf_difficulties(west_t, all_games_2013, points_pct))
+
+def display_difficulty(diff):
+  for team, diff in sorted(diff.items(), key = operator.itemgetter(1)):
+    print('%s %5f' % (team.ljust(20), diff*100))
 
 if __name__ == '__main__':
-  team_diffs = schedule_difficulties()
+  east_diff, west_diff = schedule_difficulties()
 
   header = """\
 2012-2013 NHL Schedule Difficulty by Team (easiest to hardest)
@@ -167,5 +152,6 @@ Team                 Difficulty
 
   print(header)
 
-  for team, diff in sorted(team_diffs.items(), key = operator.itemgetter(1)):
-    print(team.ljust(20), diff)
+  display_difficulty(east_diff)
+  print()
+  display_difficulty(west_diff)
