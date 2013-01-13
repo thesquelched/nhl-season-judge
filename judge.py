@@ -63,22 +63,20 @@ def _extract_vs_standings(conf):
       pct = points / POINTS_FULL_SEASON
       pct_in_conf = (points-vs_points) / POINTS_FULL_SEASON_IN_CONFERENCE
 
-      #print(team, points, vs_points, pct, pct_in_conf)
-
       points_pct[team] = (pct_in_conf - pct) / pct
 
   return points_pct
 
-def _versus_standings(url, conf):
+def _versus_standings(url, conf, func = _extract_vs_standings):
   doc = PyQuery(url_read(url))
 
   div_tables = list(doc('.Division').items())
   east_t, west_t = (div_tables[:3], div_tables[3:])
 
   if conf == 'east':
-    return _extract_vs_standings(east_t)
+    return func(east_t)
   else:
-    return _extract_vs_standings(west_t)
+    return func(west_t)
 
 def find_versus_standings():
   west = _versus_standings(VS_EAST_URL, 'west')
@@ -95,13 +93,18 @@ def _extract_standings(conf):
     for row in division('tbody tr').items():
       columns = list(row('td').items())
       if len(columns) < 8: continue
-      team, points = columns[1].text(), int(columns[6].text())
+      team, points, record = columns[1].text(), int(columns[6].text()), columns[8].text()
 
       # Remove prefixes for the top 8 teams in each conference (e.g. clinched
       # division)
       team = re.sub(r'[a-z] - ', '', team)
 
-      points_pct[team] = points / POINTS_FULL_SEASON
+      wins, losses, otl = map(int, record.split('-'))
+      vs_points = wins*2 + otl
+
+      pct_in_conf = (points-vs_points) / POINTS_FULL_SEASON_IN_CONFERENCE
+
+      points_pct[team] = pct_in_conf
 
   return points_pct
 
@@ -182,15 +185,18 @@ def conf_difficulties(standings_tables, all_games_2013, points_pct):
 
   return {t: (diff_2013[t] - diff_2012[t])/diff_2012[t] for t in conference}
 
-def schedule_difficulties(url):
+def schedule_difficulties():
   """Return a dict of team-difficulty pairs"""
 
-  doc = PyQuery(url_read(url))
+  west = _versus_standings(VS_EAST_URL, 'west', _extract_standings)
+  east = _versus_standings(VS_WEST_URL, 'east', _extract_standings)
 
+  points_pct = dict(list(west.items()) + list(east.items()))
+
+  doc = PyQuery(url_read(STANDINGS_URL))
   div_tables = list(doc('.Division').items())
 
   east_t, west_t = (div_tables[:3], div_tables[3:])
-  points_pct = extract_standings(east_t, west_t)
 
   all_games_2013 = find_games()
 
@@ -208,7 +214,7 @@ def display_difficulty(diff):
 
 
 if __name__ == '__main__':
-  east_diff, west_diff = schedule_difficulties(STANDINGS_URL)
+  east_diff, west_diff = schedule_difficulties()
 
   header = """\
 2012-2013 NHL Schedule Difficulty by Team (easiest to hardest)
