@@ -7,6 +7,7 @@ from cache import UrlCache
 import requests
 import operator
 import re
+from itertools import chain, repeat
 from pyquery import PyQuery
 from collections import defaultdict
 
@@ -52,20 +53,15 @@ def extract_standings(conf):
 
   return points_pct
 
-def find_standings():
+def find_standings(*conferences):
   """Return a dict of NHL teams and their respective points percentages"""
 
   points_pct = dict()
 
-  doc = PyQuery(url_read(STANDINGS_URL))
-
-  divisions = list(doc('.Division').items())
-  conferences = (divisions[:3], divisions[3:])
   east, west = map(extract_standings, conferences)
-
   points_pct = dict(list(east.items()) + list(west.items()))
 
-  return points_pct, east.keys(), west.keys()
+  return points_pct
 
 def extract_schedules(games):
   """Given the output of find_games, return a dict of team-schedule pairs"""
@@ -74,6 +70,7 @@ def extract_schedules(games):
 
   for home, visitor in games:
     schedules[home].append(visitor)
+    schedules[visitor].append(home)
 
   return schedules
 
@@ -84,13 +81,53 @@ def difficulty(opponents, pct):
   win_pcts = [pct[team] for team in opponents]
   return sum(win_pcts) / len(win_pcts)
 
+def separate_divisions(conf):
+  divisions = []
+
+  for div in conf:
+    division = set()
+
+    for team in div('tbody tr td:nth-child(2)').items():
+      name = re.sub(r'[a-z] - ', '', team.text())
+      division.add(name)
+
+    divisions.append(division)
+
+  return divisions
+
+def full_home_schedule(team, divisions):
+  my_div = next(d for d in divisions if team in d)
+  conf = set.union(*list(d for d in divisions if team not in d))
+
+  div_matchups = [(team, t) for t in my_div if t != team]
+  conf_matchups = [(team, t) for t in conf]
+
+  div_sched = chain.from_iterable(repeat(m, 3) for m in div_matchups)
+  conf_sched = chain.from_iterable(repeat(m, 2) for m in conf_matchups)
+
+  return list(div_sched) + list(conf_sched)
+
 def determine_difficulty():
   """Return a dict of team-difficulty pairs"""
 
-  schedules = extract_schedules(find_games())
-  points_pct, east, west = find_standings()
+  doc = PyQuery(url_read(STANDINGS_URL))
 
-  return {team: difficulty(schedule, points_pct) for team, schedule in schedules.items()}
+  div_tables = list(doc('.Division').items())
+  east_t, west_t = (div_tables[:3], div_tables[3:])
+
+  east_divs, west_divs = map(separate_divisions, (east_t, west_t))
+  east, west = tuple(set.union(*d) for d in (east_divs, west_divs))
+
+  east_games_2012 = list(chain.from_iterable(full_home_schedule(t, east_divs) for t in east))
+  west_games_2012 = list(chain.from_iterable(full_home_schedule(t, west_divs) for t in west))
+
+  east_scheds_2012 = extract_schedules(east_games_2012)
+  west_scheds_2012 = extract_schedules(west_games_2012)
+
+  points_pct = find_standings(east_t, west_t)
+  scheds_2013 = extract_schedules(find_games())
+
+  return {team: difficulty(schedule, points_pct) for team, schedule in scheds_2013.items()}
 
 if __name__ == '__main__':
   team_diffs = determine_difficulty()
