@@ -15,9 +15,14 @@ from collections import defaultdict
 # nhl.com urls
 SCHEDULE_URL = 'http://www.nhl.com/ice/schedulebyseason.htm?season=20122013&gameType=2&team=&network=&venue='
 STANDINGS_URL = 'http://www.nhl.com/ice/standings.htm?season=20112012&type=DIV'
+VS_EAST_URL = 'http://www.nhl.com/ice/standings.htm?season=20112012&type=XVE'
+VS_WEST_URL = 'http://www.nhl.com/ice/standings.htm?season=20112012&type=XVW'
 
 # Constants
-POINTS_IN_FULL_SEASON = 164.0
+GAMES_FULL_SEASON = 82
+GAMES_FULL_SEASON_IN_CONFERENCE = 64
+POINTS_FULL_SEASON = 2.0 * GAMES_FULL_SEASON
+POINTS_FULL_SEASON_IN_CONFERENCE = 2.0 * GAMES_FULL_SEASON_IN_CONFERENCE
 
 def url_read(url):
   """Grab HTML content from the url"""
@@ -37,7 +42,51 @@ def find_games():
 
   return games
 
-def extract_standings(conf):
+def _extract_vs_standings(conf):
+  """Return the points percentage of each team from the 2011-2012 season"""
+
+  points_pct = dict()
+
+  for division in conf:
+    for row in division('tbody tr').items():
+      columns = list(row('td').items())
+      if len(columns) < 8: continue
+      team, points, record = columns[1].text(), int(columns[6].text()), columns[8].text()
+
+      # Remove prefixes for the top 8 teams in each conference (e.g. clinched
+      # division)
+      team = re.sub(r'[a-z] - ', '', team)
+
+      wins, losses, otl = map(int, record.split('-'))
+      vs_points = wins*2 + otl
+
+      pct = points / POINTS_FULL_SEASON
+      pct_in_conf = (points-vs_points) / POINTS_FULL_SEASON_IN_CONFERENCE
+
+      #print(team, points, vs_points, pct, pct_in_conf)
+
+      points_pct[team] = (pct_in_conf - pct) / pct
+
+  return points_pct
+
+def _versus_standings(url, conf):
+  doc = PyQuery(url_read(url))
+
+  div_tables = list(doc('.Division').items())
+  east_t, west_t = (div_tables[:3], div_tables[3:])
+
+  if conf == 'east':
+    return _extract_vs_standings(east_t)
+  else:
+    return _extract_vs_standings(west_t)
+
+def find_versus_standings():
+  west = _versus_standings(VS_EAST_URL, 'west')
+  east = _versus_standings(VS_WEST_URL, 'east')
+
+  return (east, west)
+
+def _extract_standings(conf):
   """Return the points percentage of each team from the 2011-2012 season"""
 
   points_pct = dict()
@@ -52,16 +101,16 @@ def extract_standings(conf):
       # division)
       team = re.sub(r'[a-z] - ', '', team)
 
-      points_pct[team] = points / POINTS_IN_FULL_SEASON
+      points_pct[team] = points / POINTS_FULL_SEASON
 
   return points_pct
 
-def find_standings(*conferences):
+def extract_standings(*conferences):
   """Return a dict of NHL teams and their respective points percentages"""
 
   points_pct = dict()
 
-  east, west = map(extract_standings, conferences)
+  east, west = map(_extract_standings, conferences)
   points_pct = dict(list(east.items()) + list(west.items()))
 
   return points_pct
@@ -133,15 +182,15 @@ def conf_difficulties(standings_tables, all_games_2013, points_pct):
 
   return {t: (diff_2013[t] - diff_2012[t])/diff_2012[t] for t in conference}
 
-def schedule_difficulties():
+def schedule_difficulties(url):
   """Return a dict of team-difficulty pairs"""
 
-  doc = PyQuery(url_read(STANDINGS_URL))
+  doc = PyQuery(url_read(url))
 
   div_tables = list(doc('.Division').items())
 
   east_t, west_t = (div_tables[:3], div_tables[3:])
-  points_pct = find_standings(east_t, west_t)
+  points_pct = extract_standings(east_t, west_t)
 
   all_games_2013 = find_games()
 
@@ -159,7 +208,7 @@ def display_difficulty(diff):
 
 
 if __name__ == '__main__':
-  east_diff, west_diff = schedule_difficulties()
+  east_diff, west_diff = schedule_difficulties(STANDINGS_URL)
 
   header = """\
 2012-2013 NHL Schedule Difficulty by Team (easiest to hardest)
