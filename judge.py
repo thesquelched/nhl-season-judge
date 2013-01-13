@@ -7,6 +7,7 @@ from cache import UrlCache
 import requests
 import operator
 import re
+
 from itertools import chain, repeat
 from pyquery import PyQuery
 from collections import defaultdict
@@ -37,6 +38,8 @@ def find_games():
   return games
 
 def extract_standings(conf):
+  """Return the points percentage of each team from the 2011-2012 season"""
+
   points_pct = dict()
 
   for division in conf:
@@ -82,6 +85,8 @@ def difficulty(opponents, pct):
   return sum(win_pcts) / len(win_pcts)
 
 def separate_divisions(conf):
+  """Return a list of sets, each containing the teams in a division"""
+
   divisions = []
 
   for div in conf:
@@ -96,6 +101,9 @@ def separate_divisions(conf):
   return divisions
 
 def full_home_schedule(team, divisions):
+  """Calculate the in-conference schedule for a given team in a regular,
+  82-game season"""
+
   my_div = next(d for d in divisions if team in d)
   conf = set.union(*list(d for d in divisions if team not in d))
 
@@ -108,6 +116,9 @@ def full_home_schedule(team, divisions):
   return list(div_sched) + list(conf_sched)
 
 def conf_difficulties(standings_tables, all_games_2013, points_pct):
+  """Return the relative change in the schedule difficulty between the
+  2013-2012 and 2012-2011 seasons for teams in a conference"""
+
   divisions = separate_divisions(standings_tables)
   conference = set.union(*divisions)
 
@@ -138,8 +149,14 @@ def schedule_difficulties():
           conf_difficulties(west_t, all_games_2013, points_pct))
 
 def display_difficulty(diff):
+  """Print a formatted table for the change in schedule difficult for teams
+  in a conference"""
+
   for team, diff in sorted(diff.items(), key = operator.itemgetter(1)):
-    print('%s %5f' % (team.ljust(20), diff*100))
+    dp = diff * 100
+    ds = '%.3f' % dp if diff < 0 else '+%.3f' % dp
+    print('%s %s %%' % (team.ljust(20), ds))
+
 
 if __name__ == '__main__':
   east_diff, west_diff = schedule_difficulties()
