@@ -79,5 +79,13 @@ def determine_difficulty():
 if __name__ == '__main__':
   team_diffs = determine_difficulty()
 
+  header = """\
+2012-2013 NHL Schedule Difficulty by Team (easiest to hardest)
+
+Team                 Difficulty
+--------------------------------------------------------------"""
+
+  print(header)
+
   for team, diff in sorted(team_diffs.items(), key = operator.itemgetter(1)):
-    print(team, diff)
+    print(team.ljust(20), diff)
