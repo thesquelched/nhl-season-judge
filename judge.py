@@ -202,15 +202,19 @@ def schedule_difficulties():
   return (conf_difficulties(east_t, all_games_2013, points_pct),
           conf_difficulties(west_t, all_games_2013, points_pct))
 
-def display_difficulty(diff):
+def print_results(results):
   """Print a formatted table for the change in schedule difficult for teams
   in a conference"""
 
-  for team, diff in sorted(diff.items(), key = operator.itemgetter(1)):
+  for team, diff in sorted(results.items(), key = operator.itemgetter(1)):
     dp = diff * 100
     ds = '%.3f' % dp if diff < 0 else '+%.3f' % dp
     print('%s %s %%' % (team.ljust(20), ds))
 
+
+######################################################################
+# Main
+######################################################################
 
 if __name__ == '__main__':
   east_diff, west_diff = schedule_difficulties()
@@ -223,6 +227,6 @@ Team                 Difficulty
 
   print(header)
 
-  display_difficulty(east_diff)
+  print_results(east_diff)
   print()
-  display_difficulty(west_diff)
+  print_results(west_diff)
