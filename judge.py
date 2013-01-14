@@ -1,7 +1,3 @@
-######################################################################
-# NOTE: Compare to normal 82 game season, minus interconference games
-######################################################################
-
 from cache import UrlCache
 
 import requests
