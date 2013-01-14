@@ -22,6 +22,11 @@ POINTS_PER_GAME = 2.0
 POINTS_FULL_SEASON = POINTS_PER_GAME * GAMES_FULL_SEASON
 POINTS_FULL_SEASON_IN_CONFERENCE = POINTS_PER_GAME * GAMES_FULL_SEASON_IN_CONFERENCE
 
+class Conference(object):
+  """Conference enumeration"""
+  EAST = 1
+  WEST = 2
+
 
 def url_read(url):
   """Grab HTML content from the url"""
@@ -29,7 +34,7 @@ def url_read(url):
   urlc = UrlCache(url)
   return urlc.read()
 
-def find_games():
+def games_in_short_season():
   """Return a list of (home team, visiting team) pairs for the 2012-2013 season"""
 
   doc = PyQuery(url_read(SCHEDULE_URL))
@@ -41,8 +46,9 @@ def find_games():
 
   return games
 
-def _extract_vs_standings(conf):
-  """Return the points percentage of each team from the 2011-2012 season"""
+def calc_pp_delta(conf):
+  """Return the change in team points percentages resulting from the oss of
+  inter-conference games"""
 
   points_pct = dict()
 
@@ -66,24 +72,27 @@ def _extract_vs_standings(conf):
 
   return points_pct
 
-def _versus_standings(url, conf, func = _extract_vs_standings):
+def calc_metric_from_div_standings(conf, extract_func):
+  """Calculate a metric, using extract_func, for a conference"""
+
+  url = VS_EAST_URL if conf == Conference.WEST else VS_WEST_URL
   doc = PyQuery(url_read(url))
 
   div_tables = list(doc('.Division').items())
   east_t, west_t = (div_tables[:3], div_tables[3:])
 
-  if conf == 'east':
-    return func(east_t)
-  else:
-    return func(west_t)
+  return extract_func(east_t if conf == Conference.EAST else west_t)
 
-def find_versus_standings():
-  west = _versus_standings(VS_EAST_URL, 'west')
-  east = _versus_standings(VS_WEST_URL, 'east')
+def pp_delta_conf_only():
+  """Return the change in points percentage for both conferences due to
+  loss of inter-conference games"""
+
+  west = calc_metric_from_div_standings(Conference.WEST, calc_pp_delta)
+  east = calc_metric_from_div_standings(Conference.EAST, calc_pp_delta)
 
   return (east, west)
 
-def _extract_standings(conf):
+def points_percentages(conf):
   """Return the points percentage of each team from the 2011-2012 season"""
 
   points_pct = dict()
@@ -107,18 +116,8 @@ def _extract_standings(conf):
 
   return points_pct
 
-def extract_standings(*conferences):
-  """Return a dict of NHL teams and their respective points percentages"""
-
-  points_pct = dict()
-
-  east, west = map(_extract_standings, conferences)
-  points_pct = dict(list(east.items()) + list(west.items()))
-
-  return points_pct
-
-def extract_schedules(games):
-  """Given the output of find_games, return a dict of team-schedule pairs"""
+def team_schedules(games):
+  """Given the output of games_in_short_season, return a dict of team-schedule pairs"""
 
   schedules = defaultdict(list)
 
@@ -128,14 +127,13 @@ def extract_schedules(games):
 
   return schedules
 
-def difficulty(opponents, pct):
-  """Return the difficulty of a schedule, as determined by the mean of the
-  opponents' points percentages"""
+def mopp(opponents, pct):
+  """Return the mean opponent's points percentage for a team"""
 
   win_pcts = [pct[team] for team in opponents]
   return sum(win_pcts) / len(win_pcts)
 
-def separate_divisions(conf):
+def divisions_from_conference(conf):
   """Return a list of sets, each containing the teams in a division"""
 
   divisions = []
@@ -166,29 +164,30 @@ def full_home_schedule(team, divisions):
 
   return list(div_sched) + list(conf_sched)
 
-def conf_difficulties(standings_tables, all_games_2013, points_pct):
+def mopp_delta(standings_tables, all_games_2013, points_pct):
   """Return the relative change in the schedule difficulty between the
   2013-2012 and 2012-2011 seasons for teams in a conference"""
 
-  divisions = separate_divisions(standings_tables)
+  divisions = divisions_from_conference(standings_tables)
   conference = set.union(*divisions)
 
   games_2012 = list(chain.from_iterable(full_home_schedule(t, divisions) for t in conference))
-  scheds_2012 = extract_schedules(games_2012)
+  scheds_2012 = team_schedules(games_2012)
 
   games_2013 = [g for g in all_games_2013 if g[0] in conference]
-  scheds_2013 = extract_schedules(games_2013)
+  scheds_2013 = team_schedules(games_2013)
 
-  diff_2013 = {team: difficulty(schedule, points_pct) for team, schedule in scheds_2013.items()}
-  diff_2012 = {team: difficulty(schedule, points_pct) for team, schedule in scheds_2012.items()}
+  diff_2013 = {team: mopp(schedule, points_pct) for team, schedule in scheds_2013.items()}
+  diff_2012 = {team: mopp(schedule, points_pct) for team, schedule in scheds_2012.items()}
 
   return {t: (diff_2013[t] - diff_2012[t])/diff_2012[t] for t in conference}
 
-def schedule_difficulties():
-  """Return a dict of team-difficulty pairs"""
+def league_mopp():
+  """Return a pair of dictionaries, containing the relative change in the
+  mean opponent's point percentage"""
 
-  west = _versus_standings(VS_EAST_URL, 'west', _extract_standings)
-  east = _versus_standings(VS_WEST_URL, 'east', _extract_standings)
+  west = calc_metric_from_div_standings(Conference.WEST, points_percentages)
+  east = calc_metric_from_div_standings(Conference.EAST, points_percentages)
 
   points_pct = dict(list(west.items()) + list(east.items()))
 
@@ -197,10 +196,10 @@ def schedule_difficulties():
 
   east_t, west_t = (div_tables[:3], div_tables[3:])
 
-  all_games_2013 = find_games()
+  all_games_2013 = games_in_short_season()
 
-  return (conf_difficulties(east_t, all_games_2013, points_pct),
-          conf_difficulties(west_t, all_games_2013, points_pct))
+  return (mopp_delta(east_t, all_games_2013, points_pct),
+          mopp_delta(west_t, all_games_2013, points_pct))
 
 def print_results(results):
   """Print a formatted table for the change in schedule difficult for teams
@@ -217,7 +216,7 @@ def print_results(results):
 ######################################################################
 
 if __name__ == '__main__':
-  east_diff, west_diff = schedule_difficulties()
+  east_diff, west_diff = league_mopp()
 
   header = """\
 2012-2013 NHL Schedule Difficulty by Team (easiest to hardest)
